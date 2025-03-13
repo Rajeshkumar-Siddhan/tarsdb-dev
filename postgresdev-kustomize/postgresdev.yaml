@@ -1,0 +1,99 @@
+    apiVersion: postgres-operator.crunchydata.com/v1beta1
+    kind: PostgresCluster
+    metadata:
+      name: tarsdb
+    spec:
+      image: image-registry.openshift-image-registry.svc:5000/tars-images/crunchy-postgres:ubi8-15.8-2
+      postgresVersion: 15
+      instances:
+        - name: instance1
+          replicas: 2
+          resources:
+            requests:
+              cpu: 1
+              memory: 16Gi
+          dataVolumeClaimSpec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 100Gi
+      patroni:
+        dynamicConfiguration:
+          failsafe_mode: true
+          postgresql:
+            parameters:
+              shared_buffers: 4GB
+              log_min_duration_statement: 5s
+              max_connections: 250
+              log_lock_waits: on
+              log_checkpoints: on
+              log_statement: ddl
+              log_line_prefix: "%m [%p]%q %d "
+              log_temp_files: 4MB
+              log_autovacuum_min_duration: 0
+              maintenance_work_mem: 1GB
+              checkpoint_completion_target: 0.9
+              shared_preload_libraries: pg_cron
+              track_io_timing: on
+            pg_hba:
+              - host all all all md5  
+      backups:
+        pgbackrest:
+          # configuration:
+          # - secret:
+              # name: tarsdb-s3-creds
+          image: image-registry.openshift-image-registry.svc:5000/tars-images/crunchy-pgbackrest:ubi8-2.53.1-0
+          global:
+            # archive-async: "y"
+            # spool-path: /pgdata/pgbackrest-spool
+            # repo2-retention-full: "2"
+            # repo2-retention-full-type: time
+            # repo2-s3-uri-style: path
+            repo1-retention-full: "2"
+            repo1-retention-full-type: time
+          manual:
+              repoName: repo2
+              options:
+              - --type full              
+          repos:
+            - name: repo1
+              schedules:
+                full: 0 18 * * 0
+                differential: 0 18 * * 1-6
+              volume:
+                volumeClaimSpec:
+                  accessModes:
+                    - ReadWriteOnce
+                  storageClassName: ocs-storagecluster-ceph-rbd  
+                  resources:
+                    requests:
+                      storage: 200Gi
+            # - name: repo2
+              # schedules:
+                # full: 0 21 * * 0
+                # differential: 0 21 * * 1-6   
+              # s3:
+                #  bucket: "tars-db"
+                #  endpoint: "miniodev.tars.ucmcswg.com"
+                #  region: "us-east-1"   
+      # standby:
+        # enabled: false
+        # repoName: repo2                   
+      monitoring:
+        pgmonitor:
+          exporter:
+            image: image-registry.openshift-image-registry.svc:5000/tars-images/crunchy-postgres-exporter:ubi8-5.6.2-0
+      proxy:
+        pgBouncer:
+          image: image-registry.openshift-image-registry.svc:5000/tars-images/crunchy-pgbouncer:ubi8-1.23-0
+          replicas: 1
+          config:
+            global:
+              pool_mode: session
+              reserve_pool_size: "30"
+              reserve_pool_timeout: "5"
+          resources:
+            requests:
+              cpu: 1
+              memory: 4Gi            

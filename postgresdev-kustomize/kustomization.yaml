@@ -1,0 +1,4 @@
+namespace: tars-db
+
+resources:
+ - postgresdev.yaml
